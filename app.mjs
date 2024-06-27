@@ -6,6 +6,12 @@ import dotenv from 'dotenv'
 import cors from 'cors'
 import helmet from 'helmet' //Inserta cabeceras de seguridad
 
+
+//Encriptacion
+import jwt from 'jsonwebtoken' 
+import cookieParser from 'cookie-parser' 
+import bcrypt from 'bcryptjs' 
+
 const app = express();
 app.use(express.json()) //Vamos a capturar un JSON desde el cliente, formato JSON{ }
 
@@ -15,14 +21,17 @@ app.use(express.urlencoded({extended:true})) //formato url encode
 */
 app.use(helmet()) //cabeceras de seguridad
 
-
+app.use(express.static('www'))
 //cargamos el archivo .env con todas las variables 
 dotenv.config()
+
+app.use(cookieParser())
+
 
 const PUERTO = process.env.PUERTO || 3333
 const PG_USER = process.env.PG_USER
 const PG_PASS = process.env.PG_PASS
-
+const SECRETO = process.env.SECRETO
 
 
 
@@ -39,6 +48,13 @@ const pool = new Pool({
     idleTimeoutMillis: 30000,
     connectionTimeoutMillis: 2000,
 })
+
+
+
+
+
+
+app.use('/admin', chequearToken, express.static('admin'))
 
 
 
@@ -95,6 +111,94 @@ app.delete('/productos/:id',cors(), async(req,res)=>{
     res.send('Producto ' + id + " eliminado correctamente")
 })
 
+
+
+
+
+
+//REGISTER
+
+app.post('/register', async (req,res)=>{
+    const nombre = req.body.nombre
+    const usuario = req.body.usuario
+    const pass = req.body.pass
+
+    //Encriptacion de password
+    const salt = bcrypt.genSaltSync(10);
+    const passEncriptada = bcrypt.hashSync(pass, salt);
+
+    const resultado = await pool.query('INSERT INTO usuarios (nombre,usuario,clave) VALUES ($1,$2,$3)',[nombre,usuario,passEncriptada])
+
+    res.redirect('/')
+})
+
+
+
+//INTEGRACION DE LOGIN CON ENCRIPTACION DE CLAVE 
+function chequearToken(req, res, next) {
+    // console.log('cookie')
+    // console.log(req.cookies)
+
+    // Existe la cookie?
+    if (req.cookies) {
+        try {
+            const { token } = req.cookies
+            jwt.verify(token, SECRETO)
+            // verificado -> sigo...
+            next()
+        } catch (error) {
+            res.redirect('/')
+        }
+    } else {
+        // redirecciono al inicio
+        res.redirect('/')
+    }
+}
+
+
+app.post('/login',async (req,res)=>{
+    //Obtenemos el cuerpo
+    const usuario = req.body.usuario
+    const pass = req.body.pass
+
+
+    // Consulta BD
+    try {
+        const resultado = await pool.query('SELECT * FROM usuarios WHERE usuario=$1', [usuario])
+        console.log(resultado.rows)
+        // Verificamos si el usuario esta registrado
+        if (resultado.rowCount > 0) {
+            const dbusuario = resultado.rows[0].usuario;
+            const dbPassEncriptada = resultado.rows[0].clave;
+            
+
+            // Comparar la contraseña ingresada con la almacenada
+            const match = bcrypt.compareSync(pass, dbPassEncriptada);
+
+            if (match) {
+                console.log(match)
+                // Si la contraseña coincide -> Generar el token
+                const token = jwt.sign({ usuario: dbusuario }, SECRETO, {
+                    expiresIn: '1m'
+                });
+
+                // Enviamos token en una cookie
+                res.cookie('token', token, {
+                    httpOnly: true,
+                    sameSite: 'strict',
+                    secure: true
+                });
+                res.redirect('/admin');
+            } else {
+                res.redirect('/');
+            }
+        } else {
+            res.redirect('/');
+        }
+    } catch (error) {
+        res.redirect('/')
+    }
+})
 
 
 app.listen(PUERTO,()=>{
