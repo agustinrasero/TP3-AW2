@@ -15,7 +15,7 @@ const renderizar = (id, productos) => {
     productos.forEach((producto) => {
         html += `<article>
                     <ul>
-                        <li class="productos-nombre">${producto.nombre}  </li>
+                        <li class="productos-nombre">${producto.nombre} <a class="productos-nombre__boton" href="./editar.html?id=${producto.id}">editar</a> </li>
                         <li>Stock: ${producto.stock}
                         <li>Categoria: ${producto.categoria}
                         <li>Marca: ${producto.marca}
